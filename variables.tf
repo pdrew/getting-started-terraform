@@ -22,10 +22,10 @@ variable "vpc_enable_dns_hostnames" {
   default     = true
 }
 
-variable "public_subnet_cidr_block" {
-  type        = string
+variable "public_subnets_cidr_block" {
+  type        = list(string)
   description = ""
-  default     = "10.0.0.0/24"
+  default     = ["10.0.0.0/24", "10.0.1.0/24"]
 }
 
 variable "public_subnet_map_public_ip_on_launch" {
@@ -40,10 +40,16 @@ variable "route_table_cidr_block" {
   default     = "0.0.0.0/0"
 }
 
-variable "security_group_name" {
+variable "web_server_sg_name" {
   type        = string
   description = ""
   default     = "nginx_sg"
+}
+
+variable "alb_sg_name" {
+  type        = string
+  description = ""
+  default     = "alb_sg"
 }
 
 variable "nginx_instance_type" {
