@@ -5,7 +5,7 @@ data "aws_availability_zones" "available" {
 resource "aws_vpc" "app" {
   cidr_block           = var.vpc_cidr_block
   enable_dns_hostnames = var.vpc_enable_dns_hostnames
-  tags                 = local.common_tags
+  tags                 = merge(local.common_tags, { Name = "${local.naming_prefix}-vpc" })
 }
 
 resource "aws_internet_gateway" "app" {
@@ -13,20 +13,13 @@ resource "aws_internet_gateway" "app" {
   tags   = local.common_tags
 }
 
-resource "aws_subnet" "public_subnet1" {
-  cidr_block              = var.public_subnets_cidr_block[0]
+resource "aws_subnet" "public_subnets" {
+  count                   = var.vpc_public_subnet_count
+  cidr_block              = cidrsubnet(var.vpc_cidr_block, 8, count.index)
   vpc_id                  = aws_vpc.app.id
   map_public_ip_on_launch = var.public_subnet_map_public_ip_on_launch
-  availability_zone       = data.aws_availability_zones.available.names[0]
-  tags                    = local.common_tags
-}
-
-resource "aws_subnet" "public_subnet2" {
-  cidr_block              = var.public_subnets_cidr_block[1]
-  vpc_id                  = aws_vpc.app.id
-  map_public_ip_on_launch = var.public_subnet_map_public_ip_on_launch
-  availability_zone       = data.aws_availability_zones.available.names[1]
-  tags                    = local.common_tags
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  tags                    = merge(local.common_tags, { Name = "${local.naming_prefix}-public-subnet${count.index + 1}" })
 }
 
 resource "aws_route_table" "app" {
@@ -37,21 +30,17 @@ resource "aws_route_table" "app" {
     gateway_id = aws_internet_gateway.app.id
   }
 
-  tags = local.common_tags
+  tags = merge(local.common_tags, { Name = "${local.naming_prefix}-route-table" })
 }
 
-resource "aws_route_table_association" "app_subnet1" {
-  subnet_id      = aws_subnet.public_subnet1.id
-  route_table_id = aws_route_table.app.id
-}
-
-resource "aws_route_table_association" "app_subnet2" {
-  subnet_id      = aws_subnet.public_subnet2.id
+resource "aws_route_table_association" "app_public_subnets" {
+  count          = var.vpc_public_subnet_count
+  subnet_id      = aws_subnet.public_subnets[count.index].id
   route_table_id = aws_route_table.app.id
 }
 
 resource "aws_security_group" "nginx_sg" {
-  name   = var.web_server_sg_name
+  name   = "${local.naming_prefix}-${var.web_server_sg_name}"
   vpc_id = aws_vpc.app.id
 
   ingress {
@@ -72,7 +61,7 @@ resource "aws_security_group" "nginx_sg" {
 }
 
 resource "aws_security_group" "alb_sg" {
-  name   = var.alb_sg_name
+  name   = "${local.naming_prefix}-${var.alb_sg_name}"
   vpc_id = aws_vpc.app.id
 
   ingress {

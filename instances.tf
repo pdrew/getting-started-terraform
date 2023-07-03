@@ -2,55 +2,25 @@ data "aws_ssm_parameter" "amzn2_linux" {
   name = "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 }
 
-resource "aws_instance" "nginx1" {
+resource "aws_instance" "web_servers" {
+  count                  = var.instance_count
   ami                    = nonsensitive(data.aws_ssm_parameter.amzn2_linux.value)
-  instance_type          = var.nginx_instance_type
-  subnet_id              = aws_subnet.public_subnet1.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public_subnets[(count.index % var.vpc_public_subnet_count)].id
   vpc_security_group_ids = [aws_security_group.nginx_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.nginx_profile.name
 
-  user_data = <<EOF
-#! /bin/bash
-sudo amazon-linux-extras install -y nginx1
-sudo service nginx start
-aws s3 cp s3://${aws_s3_bucket.nginx.id}/website/index.html /home/ec2-user/index.html
-aws s3 cp s3://${aws_s3_bucket.nginx.id}/website/Globo_logo_Vert.png /home/ec2-user/Globo_logo_Vert.png
-sudo rm /usr/share/nginx/html/index.html
-sudo cp /home/ec2-user/index.html /usr/share/nginx/html/index.html
-sudo cp /home/ec2-user/Globo_logo_Vert.png /usr/share/nginx/html/Globo_logo_Vert.png
-EOF
-
-  tags = local.common_tags
-
-  depends_on = [aws_iam_role_policy.allow_s3_all]
-}
-
-resource "aws_instance" "nginx2" {
-  ami                    = nonsensitive(data.aws_ssm_parameter.amzn2_linux.value)
-  instance_type          = var.nginx_instance_type
-  subnet_id              = aws_subnet.public_subnet2.id
-  vpc_security_group_ids = [aws_security_group.nginx_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.nginx_profile.name
-
-  user_data = <<EOF
-#! /bin/bash
-sudo amazon-linux-extras install -y nginx1
-sudo service nginx start
-aws s3 cp s3://${aws_s3_bucket.nginx.id}/website/index.html /home/ec2-user/index.html
-aws s3 cp s3://${aws_s3_bucket.nginx.id}/website/Globo_logo_Vert.png /home/ec2-user/Globo_logo_Vert.png
-sudo rm /usr/share/nginx/html/index.html
-sudo cp /home/ec2-user/index.html /usr/share/nginx/html/index.html
-sudo cp /home/ec2-user/Globo_logo_Vert.png /usr/share/nginx/html/Globo_logo_Vert.png
-EOF
-
-  tags = local.common_tags
+  user_data = templatefile("${path.module}/templates/startup_script.tpl", {
+    s3_bucket_name = aws_s3_bucket.nginx.id
+  })
+  tags = merge(local.common_tags, { Name = "${local.naming_prefix}-instance${count.index + 1}" })
 
   depends_on = [aws_iam_role_policy.allow_s3_all]
 }
 
 # aws_iam_role
 resource "aws_iam_role" "allow_nginx_s3" {
-  name               = "allow_nginx_s3"
+  name               = "${local.naming_prefix}-allow-nginx-s3"
   assume_role_policy = <<EOF
 {
   "Version": "2012-10-17",
@@ -71,7 +41,7 @@ EOF
 
 # aws_iam_policy
 resource "aws_iam_role_policy" "allow_s3_all" {
-  name = "allow_s3_all"
+  name = "${local.naming_prefix}-allow-s3-all"
   role = aws_iam_role.allow_nginx_s3.name
 
   policy = <<EOF
@@ -97,7 +67,7 @@ EOF
 
 # aws_iam_instance_profile
 resource "aws_iam_instance_profile" "nginx_profile" {
-  name = "nginx_profile"
+  name = "${local.naming_prefix}-nginx-profile"
   role = aws_iam_role.allow_nginx_s3.name
   tags = local.common_tags
 }
